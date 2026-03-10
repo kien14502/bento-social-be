@@ -1,0 +1,110 @@
+name: CD — Docker Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  COMPOSE_FILE: docker-compose.prod.yml
+
+jobs:
+  docker-build-and-deploy:
+    runs-on: self-hosted
+    environment: product
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Verify secrets
+        run: |
+          echo "Verifying GitHub Secrets..."
+
+          MISSING_SECRETS=""
+
+          # Check each required secret
+          [ -z "${{ secrets.PORT }}" ] && MISSING_SECRETS="$MISSING_SECRETS PORT"
+          if [ ! -z "$MISSING_SECRETS" ]; then
+            echo "Missing required secrets:$MISSING_SECRETS"
+            echo ""
+            echo "Please add these secrets in GitHub:"
+            echo "Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          fi
+
+          echo "All required secrets are configured"
+
+      - name: Create .env
+        run: |
+          cat > .env << EOF
+          # App Configuration
+          NODE_ENV=production
+          PORT=${{ secrets.PORT }}
+
+          # Database Configuration
+          REDIS_HOST=${{ secrets.REDIS_HOST }}
+          REDIS_PORT=${{ secrets.REDIS_PORT }}
+
+          CORS_WHITELIST=${{ secrets.CORS_WHITELIST }}
+          APP_GLOBAL_PREFIX=${{ secrets.APP_GLOBAL_PREFIX }}
+
+          # JWT Configuration
+          JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_ACCESS_TOKEN_EXPIRY=${{ secrets.JWT_ACCESS_TOKEN_EXPIRY }}
+          JWT_REFRESH_TOKEN_EXPIRY=${{ secrets.JWT_REFRESH_TOKEN_EXPIRY }}
+
+          # Email Configuration
+          EMAIL_PASS=${{ secrets.EMAIL_PASS }}
+          EMAIL_USER=${{ secrets.EMAIL_USER }}
+          EMAIL_HOST=${{ secrets.EMAIL_HOST }}
+          EMAIL_PORT=${{ secrets.EMAIL_PORT }}
+          CLIENT_URL=${{ secrets.CLIENT_URL }}
+
+          THROTTLE_TTL=${{ secrets.THROTTLE_TTL }}
+          THROTTLE_LIMIT=${{ secrets.THROTTLE_LIMIT }}
+
+          KAFKAJS_NO_PARTITIONER_WARNING=${{ secrets.KAFKAJS_NO_PARTITIONER_WARNING }}
+          BROKER_KAFKA=${{ secrets.BROKER_KAFKA }}
+
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+
+          MONGO_DATABASE_CONNECTION_STRING=${{ secrets.MONGO_DATABASE_CONNECTION_STRING }}
+
+          EOF
+
+          echo ".env file created from GitHub Secrets"
+
+      - name: Deploy with Docker Compose
+        run: |
+          docker compose -f ${{ env.COMPOSE_FILE }} down --remove-orphans || true
+          docker compose -f ${{ env.COMPOSE_FILE }} up -d --build --force-recreate
+
+      - name: Status
+        run: |
+          echo "=== Services Status ==="
+          docker compose -f ${{ env.COMPOSE_FILE }} ps
+          echo ""
+          echo "=== App Logs (last 50 lines) ==="
+          docker compose -f ${{ env.COMPOSE_FILE }} logs --tail=50 app
+
+      # - name: Remove .env
+      #   run: |
+      #     rm -f .env
+
+      - name: Cleanup
+        run: |
+          echo "🧹 Cleaning up unused Docker resources..."
+          docker image prune -af
+          docker network prune -f
+          echo "Cleanup completed"
+      - name: Summary
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo " Deployment Successful!"
+          else
+            echo " Deployment Failed!"
+          fi
