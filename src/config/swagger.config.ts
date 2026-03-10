@@ -1,0 +1,33 @@
+import { INestApplication } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ErrorResponseDto } from 'src/common/dtos/error.response.dto';
+
+const config = new DocumentBuilder()
+  .setTitle('Do something')
+  .setDescription('The Do something description')
+  .setVersion('1.0')
+  .addBearerAuth(
+    {
+      type: 'http',
+      scheme: 'Bearer',
+      bearerFormat: 'JWT',
+      in: 'header',
+    },
+    'accessToken',
+  )
+  .setLicense('Doc json', '/api-docs-json')
+  .addServer('http://localhost:8888', 'Localhost Server')
+  .addServer('http://192.168.1.100:8888', 'Local Network Server')
+  .build();
+
+export const setupSwagger = (app: INestApplication) => {
+  const document = SwaggerModule.createDocument(app, config, {
+    extraModels: [ErrorResponseDto],
+  });
+  SwaggerModule.setup('api-docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      tryItOutEnabled: true,
+    },
+  });
+};

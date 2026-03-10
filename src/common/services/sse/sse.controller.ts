@@ -1,0 +1,29 @@
+import { Controller, Req, Sse, UseGuards } from '@nestjs/common';
+import { SseService } from './sse.service';
+import type { Request } from 'express';
+import { ApiTags } from '@nestjs/swagger';
+import { SseJwtGuard } from 'src/common/guards/sse-jwt.guard';
+import { Public } from 'src/common/decorators/public.decorator';
+import { CurrentUser } from 'src/shared/interface/user.interface';
+
+@ApiTags('Notification')
+@UseGuards(SseJwtGuard)
+@Controller('sse')
+export class SseController {
+  constructor(private readonly sseService: SseService) {}
+  @Sse('/notification')
+  @Public()
+  stream(@Req() req: Request) {
+    const user = req.user as CurrentUser;
+
+    console.log('user', user);
+
+    const stream$ = this.sseService.connect(user.id);
+
+    req.on('close', () => {
+      this.sseService.disconnect(user.id);
+    });
+
+    return stream$;
+  }
+}
